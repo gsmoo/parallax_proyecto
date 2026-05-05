@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Escaparate Parallax</title>
-    <link rel="stylesheet" href="./src/styles.css?v=5" />
+    <title>Escaparate Parallax V12</title>
+    <link rel="stylesheet" href="./src/styles.css?v=12" />
     <script type="importmap">
       {
         "imports": {
@@ -40,13 +40,29 @@
 
       <aside class="hud" aria-live="polite">
         <span class="status-dot"></span>
-        <span class="status-text">Iniciando camara</span>
+        <span class="status-text">Build V12</span>
       </aside>
+
+      <div
+        style="
+          position: fixed;
+          right: 18px;
+          top: 18px;
+          z-index: 30;
+          padding: 12px 16px;
+          border-radius: 8px;
+          background: rgba(0, 180, 90, 0.9);
+          color: #04150a;
+          font: 700 18px/1.2 Arial, sans-serif;
+        "
+      >
+        VERSION V12 OK
+      </div>
 
       <div class="toast" role="status" aria-live="polite"></div>
       <div class="gesture-cursor" aria-hidden="true"></div>
     </main>
 
-    <script type="module" src="./src/main.js?v=5"></script>
+    <script type="module" src="./src/main.js?v=12"></script>
   </body>
 </html>

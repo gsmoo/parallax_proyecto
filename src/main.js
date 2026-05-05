@@ -20,6 +20,10 @@ const buttons = [...document.querySelectorAll(".gesture-button")];
 
 const MODEL_URL = "./assets/models/escaparate.glb?v=2";
 const STATIC_SCENE_NAMES = new Set(["cube", "cube001"]);
+const HAND_ROTATION_CORRECTION = new THREE.Quaternion().setFromAxisAngle(
+  new THREE.Vector3(0, 1, 0),
+  Math.PI,
+);
 const HEAD_CAMERA_SCALE = {
   x: 0.42,
   y: 0.26,
@@ -52,6 +56,7 @@ const state = {
   pointerRayDirection: new THREE.Vector3(),
   grabPlane: new THREE.Plane(),
   grabOffset: new THREE.Vector3(),
+  grabRotationOffset: new THREE.Quaternion(),
   hoverHitPoint: new THREE.Vector3(),
   hoverBox: null,
   hoveredMesh: null,
@@ -101,6 +106,35 @@ function toRapierVector(vector) {
 
 function toRapierQuaternion(quaternion) {
   return { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w };
+}
+
+function getHandWorldQuaternion(hand) {
+  const wrist = hand[0];
+  const indexBase = hand[5];
+  const pinkyBase = hand[17];
+  const middleBase = hand[9];
+
+  const palmX = new THREE.Vector3(
+    indexBase.x - pinkyBase.x,
+    -(indexBase.y - pinkyBase.y),
+    indexBase.z - pinkyBase.z,
+  ).normalize();
+  const palmY = new THREE.Vector3(
+    middleBase.x - wrist.x,
+    -(middleBase.y - wrist.y),
+    middleBase.z - wrist.z,
+  ).normalize();
+  const palmZ = new THREE.Vector3().crossVectors(palmY, palmX).normalize();
+  const correctedPalmY = new THREE.Vector3().crossVectors(palmX, palmZ).normalize();
+
+  const handBasis = new THREE.Matrix4().makeBasis(palmX, correctedPalmY, palmZ);
+  const handLocalQuaternion = new THREE.Quaternion().setFromRotationMatrix(handBasis);
+  return state.camera
+    ? state.camera.quaternion
+        .clone()
+        .multiply(HAND_ROTATION_CORRECTION)
+        .multiply(handLocalQuaternion)
+    : HAND_ROTATION_CORRECTION.clone().multiply(handLocalQuaternion);
 }
 
 async function setupPhysics() {
@@ -256,6 +290,9 @@ async function setupThreeScene() {
       child.userData.hoverMaterials = [];
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.forEach((material) => {
+        if (child.name === "Cube.002" && material.color) {
+          material.color.set("#22c55e");
+        }
         child.userData.hoverMaterials.push({
           material,
           emissive: material.emissive?.clone(),
@@ -509,7 +546,7 @@ function updateSceneHover(screenX, screenY, htmlTarget) {
   return ray;
 }
 
-function startGrab(screenX, screenY) {
+function startGrab(screenX, screenY, hand) {
   if (!state.hoveredMesh) return;
 
   const body = state.meshBodies.get(state.hoveredMesh);
@@ -530,12 +567,14 @@ function startGrab(screenX, screenY) {
   state.lastGrabTime = performance.now();
   state.grabbedMesh = state.hoveredMesh;
   state.grabbedBody = body;
+  const handQuaternion = getHandWorldQuaternion(hand);
+  state.grabRotationOffset.copy(handQuaternion).invert().multiply(state.grabbedMesh.quaternion);
   body.setLinvel({ x: 0, y: 0, z: 0 }, true);
   body.setAngvel({ x: 0, y: 0, z: 0 }, true);
   body.setBodyType(state.rapier.RigidBodyType.KinematicPositionBased, true);
 }
 
-function updateGrab(screenX, screenY) {
+function updateGrab(screenX, screenY, hand) {
   if (!state.grabbedBody || !state.grabbedMesh) return;
 
   const ray = getPointerRay(screenX, screenY);
@@ -551,9 +590,11 @@ function updateGrab(screenX, screenY) {
     .divideScalar(deltaSeconds);
   state.grabTargetPosition.copy(targetPosition);
   state.lastGrabTime = now;
+  const handQuaternion = getHandWorldQuaternion(hand);
+  const targetQuaternion = handQuaternion.multiply(state.grabRotationOffset.clone());
 
   state.grabbedBody.setNextKinematicTranslation(toRapierVector(targetPosition));
-  state.grabbedBody.setNextKinematicRotation(toRapierQuaternion(state.grabbedMesh.quaternion));
+  state.grabbedBody.setNextKinematicRotation(toRapierQuaternion(targetQuaternion));
 }
 
 function releaseGrab() {
@@ -601,11 +642,11 @@ function updateHandInteraction(hand) {
   });
 
   if (state.grabbedBody && isPinching) {
-    updateGrab(screenX, screenY);
+    updateGrab(screenX, screenY, hand);
   } else if (button && isPinching && !state.pinchActive) {
     button.click();
   } else if (state.hoveredMesh && isPinching && !state.pinchActive) {
-    startGrab(screenX, screenY);
+    startGrab(screenX, screenY, hand);
   }
 
   if (!isPinching && state.pinchActive) {
